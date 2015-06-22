@@ -18,6 +18,7 @@ import android.graphics.PorterDuff.Mode;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.media.audiofx.Visualizer;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
@@ -50,9 +51,11 @@ public class VisualizerView extends View {
 
     private Paint mFlashPaint = new Paint();
     private Paint mFadePaint = new Paint();
+    private Matrix mMatrix;
+    private AudioData mAudioData;
+    private FFTData mFftData;
 
-    public VisualizerView(Context context, AttributeSet attrs, int defStyle)
-    {
+    public VisualizerView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs);
         init();
     }
@@ -71,6 +74,11 @@ public class VisualizerView extends View {
         mBytes = null;
         mFFTBytes = null;
 
+        mAudioData = new AudioData(null);
+        mFftData = new FFTData(null);
+
+        mMatrix = new Matrix();
+
         mFlashPaint.setColor(Color.argb(122, 255, 255, 255));
         mFadePaint.setColor(Color.argb(200, 255, 255, 255)); // Adjust alpha to
                                                              // change how
@@ -84,7 +92,7 @@ public class VisualizerView extends View {
     /**
      * Links the visualizer to a player
      * 
-     * @param player - MediaPlayer instance to link to
+     * @param audioSessionId - MediaPlayer instance to link to
      */
     public void link(int audioSessionId)
     {
@@ -94,7 +102,6 @@ public class VisualizerView extends View {
             mVisualizer = null;
         }
 
-        Log.i(TAG, "session=" + audioSessionId);
         mAudioSessionId = audioSessionId;
 
         if (mVisualizer == null) {
@@ -173,6 +180,7 @@ public class VisualizerView extends View {
      */
     public void updateVisualizer(byte[] bytes) {
         mBytes = bytes;
+        mAudioData.bytes = bytes;
         invalidate();
     }
 
@@ -185,6 +193,7 @@ public class VisualizerView extends View {
      */
     public void updateVisualizerFFT(byte[] bytes) {
         mFFTBytes = bytes;
+        mFftData.bytes = bytes;
         invalidate();
     }
 
@@ -199,6 +208,17 @@ public class VisualizerView extends View {
         invalidate();
     }
 
+    @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        mRect.set(0, 0, getWidth(), getHeight());
+    }
+
     Bitmap mCanvasBitmap;
     Canvas mCanvas;
 
@@ -207,46 +227,37 @@ public class VisualizerView extends View {
         super.onDraw(canvas);
 
         // Create canvas once we're ready to draw
-        mRect.set(0, 0, getWidth(), getHeight());
-
-        if (mCanvasBitmap == null)
-        {
+        if (mCanvasBitmap == null) {
             mCanvasBitmap = Bitmap.createBitmap(canvas.getWidth(), canvas.getHeight(),
                     Config.ARGB_8888);
         }
-        if (mCanvas == null)
-        {
+        if (mCanvas == null) {
             mCanvas = new Canvas(mCanvasBitmap);
         }
 
         if (mBytes != null) {
             // Render all audio renderers
-            AudioData audioData = new AudioData(mBytes);
-            for (Renderer r : mRenderers)
-            {
-                r.render(mCanvas, audioData, mRect);
+            for (Renderer r : mRenderers) {
+                r.render(mCanvas, mAudioData, mRect);
             }
         }
 
         if (mFFTBytes != null) {
             // Render all FFT renderers
-            FFTData fftData = new FFTData(mFFTBytes);
-            for (Renderer r : mRenderers)
-            {
-                r.render(mCanvas, fftData, mRect);
+            for (Renderer r : mRenderers) {
+                r.render(mCanvas, mFftData, mRect);
             }
         }
 
         // Fade out old contents
         mCanvas.drawPaint(mFadePaint);
 
-        if (mFlash)
-        {
+        if (mFlash) {
             mFlash = false;
             mCanvas.drawPaint(mFlashPaint);
         }
 
-        canvas.drawBitmap(mCanvasBitmap, new Matrix(), null);
+        canvas.drawBitmap(mCanvasBitmap, mMatrix, null);
     }
 
     // Methods for adding renderers to visualizer
